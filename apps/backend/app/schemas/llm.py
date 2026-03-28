@@ -35,3 +35,11 @@ class LLMStatusResponse(BaseModel):
     queue_depth: int
     busy: bool
     memory: dict[str, float]
+
+
+class HardwareCheckResponse(BaseModel):
+    ok: bool
+    warning: str | None
+    free_ram_gb: float
+    free_vram_gb: float
+    model_size_gb: float

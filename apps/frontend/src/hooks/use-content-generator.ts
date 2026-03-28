@@ -1,17 +1,16 @@
 "use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useMemo, useState } from "react";
 
-import { useModelsQuery } from "@/hooks/use-models";
+import { useInstalledModelsQuery } from "@/hooks/use-models";
 import { usePluginsQuery } from "@/hooks/use-plugins";
-import { createHistoryEntry } from "@/services/catalog.service";
-import { generateContentStub } from "@/services/content-generator.service";
+import { getLlmStatus, hardwareCheck, loadLlmModel } from "@/services/llm.service";
 import { runLlmGenerateStream } from "@/services/llm-generate-ws.service";
 
 export function useContentGenerator() {
   const queryClient = useQueryClient();
-  const modelsQuery = useModelsQuery();
+  const modelsQuery = useInstalledModelsQuery();
   const pluginsQuery = usePluginsQuery();
 
   const [modelId, setModelId] = useState("");
@@ -21,9 +20,11 @@ export function useContentGenerator() {
   const [result, setResult] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
+  const [isLoadingModel, setIsLoadingModel] = useState(false);
 
+  // Only show LLM models in this page
   const installedModels = useMemo(
-    () => modelsQuery.data?.filter((m) => m.status === "installed") ?? [],
+    () => modelsQuery.data?.filter((m) => m.type === "llm") ?? [],
     [modelsQuery.data],
   );
 
@@ -32,40 +33,58 @@ export function useContentGenerator() {
     [pluginsQuery.data],
   );
 
-  const stubMutation = useMutation({
-    mutationFn: async () => generateContentStub({ modelId: modelId || "stub", prompt }),
-    onSuccess: async (text) => {
-      setResult(text);
-      try {
-        await createHistoryEntry({
-          model_id: null,
-          prompt,
-          response: text.slice(0, 8000),
-        });
-        await queryClient.invalidateQueries({ queryKey: ["catalog", "history"] });
-      } catch {
-        // best-effort
-      }
-    },
+  // LLM status — which model is currently loaded
+  const llmStatusQuery = useQuery({
+    queryKey: ["llm", "status"],
+    queryFn: getLlmStatus,
+    refetchInterval: 5000,
   });
+
+  const loadedModelId = llmStatusQuery.data?.loaded_model_id ?? null;
+
+  // Hardware capability check for the selected model
+  const selectedModelId = Number(modelId);
+  const hwCheckQuery = useQuery({
+    queryKey: ["llm", "hardware-check", selectedModelId],
+    queryFn: () => hardwareCheck(selectedModelId),
+    enabled: Number.isFinite(selectedModelId) && selectedModelId > 0,
+    staleTime: 30_000,
+  });
+
+  const hardwareWarning = hwCheckQuery.data?.warning ?? null;
 
   const runStream = useCallback(async () => {
     if (!prompt.trim()) {
-      setStreamError("Enter a prompt.");
+      setStreamError("Enter a prompt first.");
       return;
     }
     const mid = Number(modelId);
     if (!Number.isFinite(mid) || mid < 1) {
-      setStreamError(
-        "Choose an installed model (by id). Load it with POST /api/v1/llm/load before streaming.",
-      );
+      setStreamError("Select an installed LLM model.");
       return;
     }
     setStreamError(null);
-    setStreaming(true);
     setResult("");
+
+    // Auto-load model if it's not already the active one
+    if (loadedModelId !== mid) {
+      try {
+        setIsLoadingModel(true);
+        await loadLlmModel(mid);
+        await queryClient.invalidateQueries({ queryKey: ["llm", "status"] });
+      } catch (e) {
+        setStreamError(e instanceof Error ? e.message : "Failed to load model.");
+        setIsLoadingModel(false);
+        return;
+      } finally {
+        setIsLoadingModel(false);
+      }
+    }
+
     const pid = pluginId === "none" ? null : Number(pluginId);
     const pluginPk = pid !== null && Number.isFinite(pid) ? pid : null;
+
+    setStreaming(true);
     try {
       await runLlmGenerateStream({
         modelId: mid,
@@ -76,11 +95,11 @@ export function useContentGenerator() {
       });
       await queryClient.invalidateQueries({ queryKey: ["catalog", "history"] });
     } catch (e) {
-      setStreamError(e instanceof Error ? e.message : "Stream failed");
+      setStreamError(e instanceof Error ? e.message : "Stream failed.");
     } finally {
       setStreaming(false);
     }
-  }, [maxTokens, modelId, pluginId, prompt, queryClient]);
+  }, [maxTokens, modelId, pluginId, prompt, queryClient, loadedModelId]);
 
   return {
     modelsQuery,
@@ -100,6 +119,10 @@ export function useContentGenerator() {
     streaming,
     streamError,
     runStream,
-    stubMutation,
+    isLoadingModel,
+    loadedModelId,
+    hardwareWarning,
+    llmStatusQuery,
+    hwCheckQuery,
   };
 }

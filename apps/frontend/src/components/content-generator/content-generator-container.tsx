@@ -20,10 +20,12 @@ export function ContentGeneratorContainer() {
       onPromptChange={g.setPrompt}
       result={g.result}
       streaming={g.streaming}
+      isLoadingModel={g.isLoadingModel}
       streamError={g.streamError}
       onStream={() => void g.runStream()}
-      stubMutation={g.stubMutation}
       onClear={() => g.setResult("")}
+      loadedModelId={g.loadedModelId}
+      hardwareWarning={g.hardwareWarning}
     />
   );
 }

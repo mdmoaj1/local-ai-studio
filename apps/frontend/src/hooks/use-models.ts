@@ -50,6 +50,15 @@ export function useAllModelsQuery() {
   });
 }
 
+/** Installed models only (for content generator etc). */
+export function useInstalledModelsQuery() {
+  return useQuery({
+    queryKey: ["models", "installed"],
+    queryFn: fetchModels,
+    select: (data: import("@/types/models").StudioModelDto[]) =>
+      data.filter((m) => m.status === "installed"),
+  });
+}
 // ---------------------------------------------------------------------------
 // Mutations
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ from app.db.models import StudioModel
 from app.schemas.hf_models import MergedModelOut, ModelCreateRequest, RegistryModelOut
 from app.services.download_service import HuggingFaceDownloadService
 from app.utils.fs import directory_size_bytes
+from app.utils.hf_utils import parse_hf_repo_id
 from app.core.ws_manager import download_progress
 
 
@@ -52,6 +53,8 @@ class ModelService:
         if payload.type not in {k.value for k in ModelKind}:
             raise ValueError("Invalid model type")
 
+        repo_id = parse_hf_repo_id(payload.hf_repo_id)
+
         storage_dir = model_storage_dir(self._settings, payload.name)
         models_root = self._settings.resolve_models_root()
         if not ensure_under_models_root(models_root, storage_dir):
@@ -63,7 +66,7 @@ class ModelService:
 
         row = StudioModel(
             name=payload.name.strip(),
-            hf_repo_id=payload.hf_repo_id.strip(),
+            hf_repo_id=repo_id,
             local_path=str(storage_dir),
             size=0,
             status=ModelStatus.NOT_INSTALLED,

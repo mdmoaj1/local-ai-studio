@@ -192,12 +192,23 @@ export function ModelsView() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="m-repo">Hugging Face repo id</Label>
+                    <Label htmlFor="m-repo">Hugging Face repo id or URL</Label>
                     <Input
                       id="m-repo"
                       value={hfRepo}
-                      onChange={(e) => setHfRepo(e.target.value)}
-                      placeholder="organization/model-name"
+                      onChange={(e) => {
+                        const val = e.target.value.trim();
+                        // Simple client-side parse for immediate feedback
+                        if (val.includes("huggingface.co/")) {
+                          const parts = val.split("huggingface.co/")[1].split("/");
+                          if (parts.length >= 2) {
+                            setHfRepo(`${parts[0]}/${parts[1]}`);
+                            return;
+                          }
+                        }
+                        setHfRepo(val);
+                      }}
+                      placeholder="organization/model-name or full Hugging Face URL"
                       className="font-mono text-xs"
                     />
                   </div>

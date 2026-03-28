@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db, get_llm_service
 from app.schemas.llm import (
+    HardwareCheckResponse,
     LLMGenerateRequest,
     LLMGenerateResponse,
     LLMLoadAdapterRequest,
@@ -68,3 +69,12 @@ async def llm_generate(
 @router.get("/status", response_model=LLMStatusResponse)
 def llm_status(svc: LLMService = Depends(get_llm_service)) -> LLMStatusResponse:
     return svc.status()
+
+
+@router.get("/hardware-check/{model_id}", response_model=HardwareCheckResponse)
+async def llm_hardware_check(
+    model_id: int,
+    session: AsyncSession = Depends(get_db),
+    svc: LLMService = Depends(get_llm_service),
+) -> HardwareCheckResponse:
+    return await svc.hardware_check(model_id, session)

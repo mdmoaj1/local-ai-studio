@@ -12,7 +12,7 @@ from app.core.model_manager import ModelManager
 from app.core.model_registry import ModelKind, ModelStatus
 from app.db.models import AdapterRecord, History, StudioModel
 from app.db.session import AsyncSessionLocal
-from app.schemas.llm import LLMStatusResponse
+from app.schemas.llm import HardwareCheckResponse, LLMStatusResponse
 from app.services.scheduler import GenerationScheduler
 
 
@@ -159,6 +159,43 @@ class LLMService:
             )
             await hist_session.commit()
         return text
+
+    async def hardware_check(self, model_id: int, session: AsyncSession) -> HardwareCheckResponse:
+        """Compare model size on disk against available RAM/VRAM and return advisory."""
+        import psutil
+
+        row = await session.get(StudioModel, model_id)
+        model_size_bytes = int(row.size) if row and row.size else 0
+        model_size_gb = model_size_bytes / (1024 ** 3)
+
+        vm = psutil.virtual_memory()
+        free_ram_gb = vm.available / (1024 ** 3)
+
+        free_vram_gb = 0.0
+        warnings: list[str] = []
+
+        mem = self._mgr.memory_snapshot_mb()
+        if "cuda_free_mb" in mem:
+            free_vram_gb = mem["cuda_free_mb"] / 1024.0
+
+        # Build advisory warning — non-blocking, user can still proceed
+        if model_size_gb > 0:
+            if free_vram_gb > 0 and model_size_gb > free_vram_gb:
+                warnings.append(
+                    f"Model is {model_size_gb:.1f} GB but only {free_vram_gb:.1f} GB VRAM is free — will run on CPU (slower)."
+                )
+            elif free_vram_gb == 0 and model_size_gb > free_ram_gb:
+                warnings.append(
+                    f"Model is {model_size_gb:.1f} GB but only {free_ram_gb:.1f} GB RAM is free — may fail to load."
+                )
+
+        return HardwareCheckResponse(
+            ok=len(warnings) == 0,
+            warning=warnings[0] if warnings else None,
+            free_ram_gb=round(free_ram_gb, 2),
+            free_vram_gb=round(free_vram_gb, 2),
+            model_size_gb=round(model_size_gb, 2),
+        )
 
     def status(self) -> LLMStatusResponse:
         mem = self._mgr.memory_snapshot_mb()
