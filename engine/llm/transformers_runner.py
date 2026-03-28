@@ -76,11 +76,25 @@ class TransformersRunner:
         self._model = PeftModel.from_pretrained(self._base_lm, str(ap))
         self._model.eval()
 
+    def _format_prompt(self, prompt: str) -> str:
+        if self._tokenizer is None:
+            return prompt
+        if hasattr(self._tokenizer, "apply_chat_template") and getattr(self._tokenizer, "chat_template", None):
+            messages = [{"role": "user", "content": prompt}]
+            try:
+                formatted = self._tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+                if isinstance(formatted, str):
+                    return formatted
+            except Exception:
+                pass
+        return prompt
+
     @torch.inference_mode()
     def generate(self, prompt: str, *, max_new_tokens: int) -> str:
         if self._tokenizer is None or self._model is None:
             raise RuntimeError("Model is not loaded")
 
+        prompt = self._format_prompt(prompt)
         capped = max(1, min(int(max_new_tokens), 4096))
         inputs = self._tokenizer(prompt, return_tensors="pt")
         if self._device is not None and self._device.type == "cpu":
@@ -119,6 +133,7 @@ class TransformersRunner:
         if self._tokenizer is None or self._model is None:
             raise RuntimeError("Model is not loaded")
 
+        prompt = self._format_prompt(prompt)
         capped = max(1, min(int(max_new_tokens), 4096))
         inputs = self._tokenizer(prompt, return_tensors="pt")
         if self._device is not None and self._device.type == "cpu":
