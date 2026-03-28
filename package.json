@@ -1,0 +1,8 @@
+{
+  "name": "local-ai-studio",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "npm run dev --prefix apps/frontend",
+    "lint:frontend": "npm run lint --prefix apps/frontend"
+  }
+}
